@@ -1,0 +1,8 @@
+[
+    {
+        "name": "webserver",
+        "listen": "[::]:52123",
+        "upstream": "web:80",
+        "enabled": true
+    }
+]

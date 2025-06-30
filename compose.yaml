@@ -1,0 +1,16 @@
+services:
+  web:
+    image: "nginx"
+    ports:
+      - "52123:80"
+    volumes:
+      - ./tests/www/magic-number.html:/usr/share/nginx/html/magic/89587.html:ro
+  proxy:
+    image: "ghcr.io/shopify/toxiproxy"
+    ports:
+      - "52124:52123"
+      - "8474:8474"
+    command: 
+      -host=0.0.0.0 -config=/opt/config/toxiproxy.json
+    volumes:
+      - ./tests/config/toxiproxy.json:/opt/config/toxiproxy.json
