@@ -2,42 +2,37 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
+
+	"github.com/mcastellin/turbo-intruder/pkg/fuzzer"
 )
 
-const baseURL = "localhost:52123"
+const baseURL = "localhost:52124"
 
 type reqCounter interface {
 	ReqCount() int
 }
 
-func findMagic() {
+func findMagicNumber() {
 	payloads := make([]string, 100000)
 	for i := 0; i < len(payloads); i++ {
 		payloads[i] = fmt.Sprintf("%05d", i)
 	}
 
-	pipelined := NewPipelinedFuzzer()
+	pipelined := fuzzer.NewPipelinedFuzzer(baseURL)
 
 	start := time.Now()
-	if err := pipelined.Fuzz(baseURL, "/magic/FUZZ.html", payloads); err != nil {
+	url := fmt.Sprintf("http://%s%s", baseURL, "/magic/FUZZ.html")
+	if err := pipelined.Fuzz(url, payloads); err != nil {
 		panic(err)
 	}
 	elapsed := time.Since(start)
-	fmt.Printf("PipelinedFuzzer: took %s\n", elapsed)
-
-	// ===============================================================================
-	//defaultFuzzer := NewDefaultFuzzer()
-
-	//start = time.Now()
-	//if err := defaultFuzzer.Fuzz(baseURL, "/magic/FUZZ.html", payloads); err != nil {
-	//fmt.Printf("%v", err)
-	//panic(err)
-	//}
-	//elapsed = time.Since(start)
-	//fmt.Printf("DefaultFuzzer: took %s\n", elapsed)
+	log.Printf("PipelinedFuzzer: took %s\n", elapsed)
 }
 
 func main() {
-	findMagic()
+	// this is a test program to measure how the pipelined
+	// http requests approach performs with a large number of requests.
+	findMagicNumber()
 }
