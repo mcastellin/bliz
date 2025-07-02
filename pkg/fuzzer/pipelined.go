@@ -10,9 +10,11 @@ import (
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
 )
 
-const defaultBatchSize = 100
-const clientPoolSize = 25
-const defaultDeadlineSeconds = 60
+type Config struct {
+	BatchSize           int
+	ClientPoolSize      int
+	ConnDeadlineSeconds int
+}
 
 // PooledPipelinedClient is an HTTP client capable of
 // performing a high volume of requests against the same host
@@ -25,17 +27,18 @@ type PooledPipelinedClient struct {
 }
 
 // NewPooledPipelinedClient initialises a new instance of the client pool
-func NewPooledPipelinedClient() *PooledPipelinedClient {
-	clientPool := make([]pipelinedClient, clientPoolSize)
-	inCh := make(chan domain.Wrapper, defaultBatchSize)
-	outCh := make(chan domain.FuzzResponse, defaultBatchSize)
+func NewPooledPipelinedClient(c Config) *PooledPipelinedClient {
+	clientPool := make([]pipelinedClient, c.ClientPoolSize)
+	inCh := make(chan domain.Wrapper, c.BatchSize)
+	outCh := make(chan domain.FuzzResponse, c.BatchSize)
 
 	for i := 0; i < len(clientPool); i++ {
 		clientPool[i] = pipelinedClient{
-			INC:       inCh,
-			OUTC:      outCh,
-			batch:     make([]*domain.Wrapper, defaultBatchSize),
-			taintConn: true,
+			connDeadlineSeconds: c.ConnDeadlineSeconds,
+			INC:                 inCh,
+			OUTC:                outCh,
+			batch:               make([]*domain.Wrapper, c.BatchSize),
+			taintConn:           true,
 		}
 	}
 	return &PooledPipelinedClient{
@@ -74,10 +77,11 @@ type pipelinedClient struct {
 	batch    []*domain.Wrapper
 	batchPtr int
 
-	conn      net.Conn
-	taintConn bool
-	writer    *bufio.Writer
-	reader    *bufio.Reader
+	conn                net.Conn
+	connDeadlineSeconds int
+	taintConn           bool
+	writer              *bufio.Writer
+	reader              *bufio.Reader
 }
 
 func (c *pipelinedClient) Start() error {
@@ -158,6 +162,7 @@ func (c *pipelinedClient) flushRequests() {
 				Body:       string(body[:n]),
 				Status:     resp.Status,
 				StatusCode: resp.StatusCode,
+				Size:       resp.ContentLength,
 			}
 			c.OUTC <- fr
 			numProcessed += 1
@@ -196,7 +201,7 @@ func (c *pipelinedClient) initConn(host string) {
 	if err != nil {
 		panic(err)
 	}
-	conn.SetDeadline(time.Now().Add(defaultDeadlineSeconds * time.Second))
+	conn.SetDeadline(time.Now().Add(time.Duration(c.connDeadlineSeconds) * time.Second))
 	c.conn = conn
 	c.writer = bufio.NewWriter(conn)
 	c.reader = bufio.NewReader(conn)

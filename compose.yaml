@@ -4,7 +4,7 @@ services:
     ports:
       - "52123:80"
     volumes:
-      - ./tests/www/magic-number.html:/usr/share/nginx/html/magic/89587.html:ro
+      - ./tests/www/html/:/usr/share/nginx/html/:ro
   proxy:
     image: "ghcr.io/shopify/toxiproxy"
     ports:

@@ -3,6 +3,7 @@ package fuzzer
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
@@ -30,47 +31,47 @@ func getPayload(generators []PayloadGenerator) ([]string, bool) {
 }
 
 type PipelinedFuzzer struct {
-	batchSize   int
-	concurrency int
-	reqCount    int
-	mu          sync.RWMutex
+	reqCount int64
+	mu       sync.RWMutex
 
 	renderer   reqRenderer
 	generators []PayloadGenerator
 	client     *PooledPipelinedClient
+	OUTC       chan domain.FuzzResponse
 }
 
-func NewPipelinedFuzzer(generators []PayloadGenerator) (*PipelinedFuzzer, error) {
+func NewPipelinedFuzzer(c Config, generators []PayloadGenerator) (*PipelinedFuzzer, error) {
 	if len(generators) == 0 {
 		return nil, fmt.Errorf("could not find valid payload generators for fuzzer.")
 	}
 	return &PipelinedFuzzer{
-		batchSize:   100,
-		concurrency: 20,
-		renderer:    payload.NewRequestRenderer(),
-		generators:  generators,
-		client:      NewPooledPipelinedClient(),
+		renderer:   payload.NewRequestRenderer(),
+		generators: generators,
+		client:     NewPooledPipelinedClient(c),
+		OUTC:       make(chan domain.FuzzResponse, 10),
 	}, nil
 }
 
-func (ff *PipelinedFuzzer) addReqCount(num int) {
+func (ff *PipelinedFuzzer) addReqCount(num int64) {
 	ff.mu.Lock()
 	defer ff.mu.Unlock()
 	ff.reqCount += num
 }
 
-func (ff *PipelinedFuzzer) ReqCount() int {
+func (ff *PipelinedFuzzer) ReqCount() int64 {
 	ff.mu.RLocker().Lock()
 	defer ff.mu.RLocker().Unlock()
 	return ff.reqCount
 }
 
 func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
+	defer close(ff.OUTC)
 
 	ff.client.Start()
 	var mu sync.RWMutex
-	generated := 0
+	var generated int64 = 0
 	doneGenerating := false
+	completed := false
 
 	go func() {
 		defer ff.client.Close()
@@ -91,7 +92,7 @@ func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
 
 	for {
 		mu.RLock()
-		completed := doneGenerating && generated == ff.ReqCount()
+		completed = doneGenerating && generated == ff.ReqCount()
 		mu.RUnlock()
 		if completed {
 			break
@@ -101,9 +102,10 @@ func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
 			return fmt.Errorf("channel was closed but there were more messages to process")
 		}
 		if response.StatusCode >= 200 && response.StatusCode <= 299 {
-			fmt.Printf("\n========== Response %s ===========\n", response.Req.Fuzz)
-			fmt.Printf("Status: %s\n", response.Status)
-			fmt.Printf("Body: %s\n", response.Body)
+			// todo replace this if with filters and matchers
+			response.Lines = strings.Count(response.Body, "\n")
+			response.Words = len(strings.Fields(response.Body))
+			ff.OUTC <- response
 		}
 		ff.addReqCount(1)
 	}

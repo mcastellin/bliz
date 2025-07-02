@@ -12,6 +12,9 @@ type FuzzResponse struct {
 	Body       string
 	Status     string
 	StatusCode int
+	Size       int64
+	Lines      int
+	Words      int
 }
 
 type NumericGen struct {

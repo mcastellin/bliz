@@ -2,8 +2,10 @@
 
 This is my attempt to replicate the features provided by TurboIntruder in Go.
 
-* Use HTTP 1.x pipelining to batch-up HTTP requests write/reads.
-* Multithreading
+**todo**:
+* Filters
+* Support for POST body and body fuzzing
+* Configurable output template
 
 ```bash
 curl -XDELETE localhost:8474/proxies/webserver/toxics/latency
