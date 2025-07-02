@@ -17,6 +17,9 @@ type PayloadGenerator interface {
 	Generate() (string, bool)
 	Close() error
 }
+type ResponseMatcher interface {
+	Match(domain.FuzzResponse) bool
+}
 
 func getPayload(generators []PayloadGenerator) ([]string, bool) {
 	fuzz := make([]string, len(generators))
@@ -36,17 +39,19 @@ type PipelinedFuzzer struct {
 
 	renderer   reqRenderer
 	generators []PayloadGenerator
+	matchers   []ResponseMatcher
 	client     *PooledPipelinedClient
 	OUTC       chan domain.FuzzResponse
 }
 
-func NewPipelinedFuzzer(c Config, generators []PayloadGenerator) (*PipelinedFuzzer, error) {
+func NewPipelinedFuzzer(c Config, generators []PayloadGenerator, matchers []ResponseMatcher) (*PipelinedFuzzer, error) {
 	if len(generators) == 0 {
 		return nil, fmt.Errorf("could not find valid payload generators for fuzzer.")
 	}
 	return &PipelinedFuzzer{
 		renderer:   payload.NewRequestRenderer(),
 		generators: generators,
+		matchers:   matchers,
 		client:     NewPooledPipelinedClient(c),
 		OUTC:       make(chan domain.FuzzResponse, 10),
 	}, nil
@@ -98,16 +103,17 @@ func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
 			break
 		}
 		response, more := <-ff.client.OUTC
+		ff.addReqCount(1)
+		response.Lines = strings.Count(response.Body, "\n")
+		response.Words = len(strings.Fields(response.Body))
 		if !more {
 			return fmt.Errorf("channel was closed but there were more messages to process")
 		}
-		if response.StatusCode >= 200 && response.StatusCode <= 299 {
-			// todo replace this if with filters and matchers
-			response.Lines = strings.Count(response.Body, "\n")
-			response.Words = len(strings.Fields(response.Body))
-			ff.OUTC <- response
+		for _, matcher := range ff.matchers {
+			if matcher.Match(response) {
+				ff.OUTC <- response
+			}
 		}
-		ff.addReqCount(1)
 	}
 
 	return nil

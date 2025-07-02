@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-type NumericPayloadGenerator struct {
+type NumericGenerator struct {
 	start, end, step int64
 	format           string
 	nextValue        int64
 }
 
-func NewNumericPayloadGeneratorS(config string) (*NumericPayloadGenerator, error) {
+func NewNumericPayloadGeneratorS(config string) (*NumericGenerator, error) {
 	bits := strings.Split(config, ":")
 	var err error
 	var start, end, step int64
@@ -37,7 +37,7 @@ func NewNumericPayloadGeneratorS(config string) (*NumericPayloadGenerator, error
 		return nil, fmt.Errorf("invalid sequence for numeric generator.")
 	}
 
-	return &NumericPayloadGenerator{
+	return &NumericGenerator{
 		start:     start,
 		end:       end,
 		step:      step,
@@ -46,9 +46,9 @@ func NewNumericPayloadGeneratorS(config string) (*NumericPayloadGenerator, error
 	}, nil
 }
 
-func (g *NumericPayloadGenerator) Close() error { return nil }
+func (g *NumericGenerator) Close() error { return nil }
 
-func (g *NumericPayloadGenerator) Generate() (string, bool) {
+func (g *NumericGenerator) Generate() (string, bool) {
 	if g.Done() {
 		return g.current(), false
 	}
@@ -56,11 +56,11 @@ func (g *NumericPayloadGenerator) Generate() (string, bool) {
 	g.nextValue += g.step
 	return c, !g.Done()
 }
-func (g *NumericPayloadGenerator) current() string {
+func (g *NumericGenerator) current() string {
 	return fmt.Sprintf(g.format, g.nextValue)
 }
 
-func (g *NumericPayloadGenerator) Done() bool {
+func (g *NumericGenerator) Done() bool {
 	return g.nextValue > g.end
 }
 

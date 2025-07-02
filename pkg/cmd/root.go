@@ -19,6 +19,8 @@ var (
 	method    string
 	threads   int
 	batchSize int
+
+	matchCodes string
 )
 
 const connectionTimeout = 60
@@ -68,7 +70,16 @@ var rootCmd = &cobra.Command{
 			ClientPoolSize:      threads,
 			ConnDeadlineSeconds: connectionTimeout,
 		}
-		pipelined, err := fuzzer.NewPipelinedFuzzer(fconf, generators)
+
+		statusMatcher, err := payload.NewStatusCodeMatcher(matchCodes)
+		if err != nil {
+			panic(err)
+		}
+		pipelined, err := fuzzer.NewPipelinedFuzzer(
+			fconf,
+			generators,
+			[]fuzzer.ResponseMatcher{statusMatcher},
+		)
 		if err != nil {
 			panic(err)
 		}
@@ -88,12 +99,13 @@ var rootCmd = &cobra.Command{
 				" :: Pipelining       : true\n"+
 				" :: Conn Timeout     : %d seconds\n"+
 				" :: Threads          : %d\n"+
-				" :: Matcher          : Response status: 200,204,301,302,307,401,403\n"+
+				" :: Matcher          : Response status: %s\n"+
 				"________________________________________________\n",
 				method,
 				targetUrl,
 				connectionTimeout,
 				threads,
+				matchCodes,
 			)
 
 			updateStatus(ui, start, pipelined.ReqCount())
@@ -103,6 +115,7 @@ var rootCmd = &cobra.Command{
 					updateStatus(ui, start, pipelined.ReqCount())
 				case response, more := <-pipelined.OUTC:
 					if !more {
+						ui.Printf("\n")
 						updateStatus(ui, start, pipelined.ReqCount())
 						close(done)
 						return
@@ -144,6 +157,10 @@ func init() {
 
 	rootCmd.PersistentFlags().StringArray("gn", []string{}, "Use a numeric generator for fuzzing (value: `start:end:step:format`, example: `0:100:1:%03d`)")
 	rootCmd.PersistentFlags().StringArray("gw", []string{}, "Use a wordlist generator for fuzzing (value: `filename`)")
+
+	rootCmd.PersistentFlags().StringVar(&matchCodes, "mc", "200,204,301,302,307,401,403",
+		"Match HTTP status codes, or `all` for everything. (value: `code`, default: 200,204,301,302,307,401,403)")
+
 }
 
 func Execute() {
