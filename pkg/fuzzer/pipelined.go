@@ -25,17 +25,17 @@ type PooledPipelinedClient struct {
 }
 
 // NewPooledPipelinedClient initialises a new instance of the client pool
-func NewPooledPipelinedClient(host string) *PooledPipelinedClient {
+func NewPooledPipelinedClient() *PooledPipelinedClient {
 	clientPool := make([]pipelinedClient, clientPoolSize)
 	inCh := make(chan domain.Wrapper, defaultBatchSize)
 	outCh := make(chan domain.FuzzResponse, defaultBatchSize)
 
 	for i := 0; i < len(clientPool); i++ {
 		clientPool[i] = pipelinedClient{
-			INC:   inCh,
-			OUTC:  outCh,
-			batch: make([]*domain.Wrapper, defaultBatchSize),
-			host:  host,
+			INC:       inCh,
+			OUTC:      outCh,
+			batch:     make([]*domain.Wrapper, defaultBatchSize),
+			taintConn: true,
 		}
 	}
 	return &PooledPipelinedClient{
@@ -71,7 +71,6 @@ type pipelinedClient struct {
 	OUTC chan<- domain.FuzzResponse
 
 	started  bool
-	host     string
 	batch    []*domain.Wrapper
 	batchPtr int
 
@@ -83,8 +82,13 @@ type pipelinedClient struct {
 
 func (c *pipelinedClient) Start() error {
 	processFn := func() {
-		c.initConn()
-		defer func() { c.conn.Close() }()
+		// at this point the net connection is not initialised,
+		// though we defer connection close at routine exit
+		defer func() {
+			if !c.taintConn {
+				c.conn.Close()
+			}
+		}()
 
 		c.batchPtr = 0
 		for {
@@ -107,7 +111,7 @@ func (c *pipelinedClient) Start() error {
 		// only one routine can run at any time for pipelinedClient.
 		// this is important as we need to maintain the sequence of read/write
 		// operations for every requests batch sharing the same tcp connection
-		return fmt.Errorf("pipelinedClient already started for host %s", c.host)
+		return fmt.Errorf("pipelinedClient already started")
 	}
 
 	go processFn()
@@ -126,7 +130,10 @@ func (c *pipelinedClient) Start() error {
 func (c *pipelinedClient) flushRequests() {
 	processBatch := func(startPtr int) (int, error) {
 		if c.taintConn {
-			c.initConn()
+			if startPtr >= c.batchPtr {
+				return 0, nil
+			}
+			c.initConn(c.batch[startPtr].Host)
 		}
 
 		for i := startPtr; i < c.batchPtr; i++ {
@@ -184,8 +191,8 @@ func (c *pipelinedClient) flushRequests() {
 	}
 }
 
-func (c *pipelinedClient) initConn() {
-	conn, err := net.Dial("tcp", c.host)
+func (c *pipelinedClient) initConn(host string) {
+	conn, err := net.Dial("tcp", host)
 	if err != nil {
 		panic(err)
 	}

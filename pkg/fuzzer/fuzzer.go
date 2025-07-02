@@ -2,6 +2,7 @@ package fuzzer
 
 import (
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
@@ -9,7 +10,23 @@ import (
 )
 
 type reqRenderer interface {
-	Render(url, fuzz string) domain.Wrapper
+	Render(url *url.URL, method string, fuzz []string) domain.Wrapper
+}
+type PayloadGenerator interface {
+	Generate() (string, bool)
+	Close() error
+}
+
+func getPayload(generators []PayloadGenerator) ([]string, bool) {
+	fuzz := make([]string, len(generators))
+	more := true
+
+	for i := 0; i < len(fuzz); i++ {
+		val, hasMore := generators[i].Generate()
+		more = more && hasMore
+		fuzz[i] = val
+	}
+	return fuzz, more
 }
 
 type PipelinedFuzzer struct {
@@ -18,17 +35,22 @@ type PipelinedFuzzer struct {
 	reqCount    int
 	mu          sync.RWMutex
 
-	renderer reqRenderer
-	client   *PooledPipelinedClient
+	renderer   reqRenderer
+	generators []PayloadGenerator
+	client     *PooledPipelinedClient
 }
 
-func NewPipelinedFuzzer(host string) *PipelinedFuzzer {
+func NewPipelinedFuzzer(generators []PayloadGenerator) (*PipelinedFuzzer, error) {
+	if len(generators) == 0 {
+		return nil, fmt.Errorf("could not find valid payload generators for fuzzer.")
+	}
 	return &PipelinedFuzzer{
 		batchSize:   100,
 		concurrency: 20,
 		renderer:    payload.NewRequestRenderer(),
-		client:      NewPooledPipelinedClient(host),
-	}
+		generators:  generators,
+		client:      NewPooledPipelinedClient(),
+	}, nil
 }
 
 func (ff *PipelinedFuzzer) addReqCount(num int) {
@@ -43,19 +65,37 @@ func (ff *PipelinedFuzzer) ReqCount() int {
 	return ff.reqCount
 }
 
-func (ff *PipelinedFuzzer) Fuzz(url string, payloads []string) error {
+func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
 
 	ff.client.Start()
+	var mu sync.RWMutex
+	generated := 0
+	doneGenerating := false
 
 	go func() {
 		defer ff.client.Close()
-		for _, fuzz := range payloads {
-			w := ff.renderer.Render(url, fuzz)
+		for {
+			fuzz, more := getPayload(ff.generators)
+			w := ff.renderer.Render(targetURL, method, fuzz)
 			ff.client.INC <- w
+			mu.Lock()
+			generated += 1
+			mu.Unlock()
+
+			if !more {
+				doneGenerating = true
+				return
+			}
 		}
 	}()
 
-	for i := 0; i < len(payloads); i++ {
+	for {
+		mu.RLock()
+		completed := doneGenerating && generated == ff.ReqCount()
+		mu.RUnlock()
+		if completed {
+			break
+		}
 		response, more := <-ff.client.OUTC
 		if !more {
 			return fmt.Errorf("channel was closed but there were more messages to process")
