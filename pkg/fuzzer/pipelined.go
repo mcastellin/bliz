@@ -1,17 +1,11 @@
 package fuzzer
 
 import (
-	"bufio"
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
 	"time"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
 )
-
-const defaultConnDeadlineSeconds = 60
 
 type Config struct {
 	BatchSize           int
@@ -81,11 +75,9 @@ type pipelinedClient struct {
 	batch    []*domain.Wrapper
 	batchPtr int
 
-	conn               net.Conn
+	conn               *Connection
 	dialTimeoutSeconds int
 	taintConn          bool
-	writer             *bufio.Writer
-	reader             *bufio.Reader
 }
 
 func (c *pipelinedClient) Start() error {
@@ -93,7 +85,7 @@ func (c *pipelinedClient) Start() error {
 		// at this point the net connection is not initialised,
 		// though we defer connection close at routine exit
 		defer func() {
-			if !c.taintConn {
+			if c.conn != nil {
 				c.conn.Close()
 			}
 		}()
@@ -141,60 +133,40 @@ func (c *pipelinedClient) flushRequests() {
 			if startPtr >= c.batchPtr {
 				return 0, nil
 			}
-			c.initConn(
-				c.batch[startPtr].Scheme,
-				c.batch[startPtr].Host,
+			var err error
+			r := c.batch[startPtr]
+			c.conn, err = NewConnection(
+				r.Scheme, r.Host,
+				time.Duration(c.dialTimeoutSeconds)*time.Second,
 			)
+			if err != nil {
+				return 0, err
+			}
+			c.taintConn = false
 		}
 
 		for i := startPtr; i < c.batchPtr; i++ {
-			if _, err := c.writer.WriteString(c.batch[i].Request); err != nil {
+			if err := c.conn.Send(c.batch[i]); err != nil {
 				return 0, err
 			}
 		}
-		c.writer.Flush()
+		c.conn.Flush()
 
 		numProcessed := 0
 		for i := startPtr; i < c.batchPtr; i++ {
-			resp, err := http.ReadResponse(c.reader, nil)
+			fr, more, err := c.conn.Read()
 			if err != nil {
 				return numProcessed, err
 			}
-			// Check Transfer-Encoding header if set to chunked.
-			// In that case we need to read chunked encoding.
-			//
-			// If no length and no header, then we should read the
-			// content until the connection closes.
-			cl := resp.ContentLength
-			if cl < 0 {
-				// this bit is probably useless. Reading a fixed
-				// amount of bytes without knowning the content length
-				// will only mess up the stream.
-				// For now it's better than failing the single request.
-				cl = 512
-			}
-			body := make([]byte, cl)
-			n, _ := resp.Body.Read(body)
-			resp.Body.Close()
 
-			fr := domain.FuzzResponse{
-				Req:        *c.batch[i],
-				Body:       string(body[:n]),
-				Status:     resp.Status,
-				StatusCode: resp.StatusCode,
-				Size:       resp.ContentLength,
-			}
-			c.OUTC <- fr
+			fr.Req = *c.batch[i]
+			c.OUTC <- *fr
 			numProcessed += 1
 
-			ka := resp.Header["Connection"]
-			if len(ka) == 0 || ka[0] != "keep-alive" || ka[0] == "close" {
-				// TCP connection has been closed.
-				// We expect all further reads from the conn to fail.
+			if !more {
 				c.taintConn = true
 				return numProcessed, nil
 			}
-
 		}
 		return numProcessed, nil
 	}
@@ -214,28 +186,4 @@ func (c *pipelinedClient) flushRequests() {
 		// creating a new connection and continue processing.
 		startPtr += processed
 	}
-}
-
-func (c *pipelinedClient) initConn(proto, host string) {
-	conn, err := net.DialTimeout("tcp", host, time.Second*time.Duration(c.dialTimeoutSeconds))
-	if err != nil {
-		panic(err)
-	}
-	conn.SetDeadline(time.Now().Add(time.Duration(defaultConnDeadlineSeconds) * time.Second))
-
-	if proto == "https" {
-		encConn := tls.Client(conn, &tls.Config{
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS12,
-		})
-		err := encConn.Handshake()
-		if err != nil {
-			panic(err)
-		}
-		c.conn = encConn
-	} else {
-		c.conn = conn
-	}
-	c.writer = bufio.NewWriter(c.conn)
-	c.reader = bufio.NewReader(c.conn)
 }

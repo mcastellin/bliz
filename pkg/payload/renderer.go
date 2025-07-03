@@ -33,6 +33,9 @@ func (r *RequestRenderer) Render(targetURL *url.URL, method string, fuzz []strin
 	req := []string{
 		fmt.Sprintf("%s %s %s", method, renderedPath, "HTTP/1.2"),
 		fmt.Sprintf("Host: %s", targetURL.Host),
+		// todo: check if theres is any way we can negtiate a keep-alive
+		// from the http request.
+		//fmt.Sprintf("Connection: %s", "keep-alive"),
 		"\r\n",
 	}
 
