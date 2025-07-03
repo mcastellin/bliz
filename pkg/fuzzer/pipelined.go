@@ -2,6 +2,7 @@ package fuzzer
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,10 +11,13 @@ import (
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
 )
 
+const defaultConnDeadlineSeconds = 60
+
 type Config struct {
 	BatchSize           int
 	ClientPoolSize      int
 	ConnDeadlineSeconds int
+	DialTimeoutSeconds  int
 }
 
 // PooledPipelinedClient is an HTTP client capable of
@@ -34,11 +38,11 @@ func NewPooledPipelinedClient(c Config) *PooledPipelinedClient {
 
 	for i := 0; i < len(clientPool); i++ {
 		clientPool[i] = pipelinedClient{
-			connDeadlineSeconds: c.ConnDeadlineSeconds,
-			INC:                 inCh,
-			OUTC:                outCh,
-			batch:               make([]*domain.Wrapper, c.BatchSize),
-			taintConn:           true,
+			dialTimeoutSeconds: c.DialTimeoutSeconds,
+			INC:                inCh,
+			OUTC:               outCh,
+			batch:              make([]*domain.Wrapper, c.BatchSize),
+			taintConn:          true,
 		}
 	}
 	return &PooledPipelinedClient{
@@ -77,11 +81,11 @@ type pipelinedClient struct {
 	batch    []*domain.Wrapper
 	batchPtr int
 
-	conn                net.Conn
-	connDeadlineSeconds int
-	taintConn           bool
-	writer              *bufio.Writer
-	reader              *bufio.Reader
+	conn               net.Conn
+	dialTimeoutSeconds int
+	taintConn          bool
+	writer             *bufio.Writer
+	reader             *bufio.Reader
 }
 
 func (c *pipelinedClient) Start() error {
@@ -137,7 +141,10 @@ func (c *pipelinedClient) flushRequests() {
 			if startPtr >= c.batchPtr {
 				return 0, nil
 			}
-			c.initConn(c.batch[startPtr].Host)
+			c.initConn(
+				c.batch[startPtr].Scheme,
+				c.batch[startPtr].Host,
+			)
 		}
 
 		for i := startPtr; i < c.batchPtr; i++ {
@@ -147,13 +154,26 @@ func (c *pipelinedClient) flushRequests() {
 		}
 		c.writer.Flush()
 
-		numProcessed := startPtr
+		numProcessed := 0
 		for i := startPtr; i < c.batchPtr; i++ {
 			resp, err := http.ReadResponse(c.reader, nil)
 			if err != nil {
 				return numProcessed, err
 			}
-			body := make([]byte, resp.ContentLength)
+			// Check Transfer-Encoding header if set to chunked.
+			// In that case we need to read chunked encoding.
+			//
+			// If no length and no header, then we should read the
+			// content until the connection closes.
+			cl := resp.ContentLength
+			if cl < 0 {
+				// this bit is probably useless. Reading a fixed
+				// amount of bytes without knowning the content length
+				// will only mess up the stream.
+				// For now it's better than failing the single request.
+				cl = 512
+			}
+			body := make([]byte, cl)
 			n, _ := resp.Body.Read(body)
 			resp.Body.Close()
 
@@ -168,7 +188,7 @@ func (c *pipelinedClient) flushRequests() {
 			numProcessed += 1
 
 			ka := resp.Header["Connection"]
-			if len(ka) == 0 || ka[0] != "keep-alive" {
+			if len(ka) == 0 || ka[0] != "keep-alive" || ka[0] == "close" {
 				// TCP connection has been closed.
 				// We expect all further reads from the conn to fail.
 				c.taintConn = true
@@ -196,13 +216,26 @@ func (c *pipelinedClient) flushRequests() {
 	}
 }
 
-func (c *pipelinedClient) initConn(host string) {
-	conn, err := net.Dial("tcp", host)
+func (c *pipelinedClient) initConn(proto, host string) {
+	conn, err := net.DialTimeout("tcp", host, time.Second*time.Duration(c.dialTimeoutSeconds))
 	if err != nil {
 		panic(err)
 	}
-	conn.SetDeadline(time.Now().Add(time.Duration(c.connDeadlineSeconds) * time.Second))
-	c.conn = conn
-	c.writer = bufio.NewWriter(conn)
-	c.reader = bufio.NewReader(conn)
+	conn.SetDeadline(time.Now().Add(time.Duration(defaultConnDeadlineSeconds) * time.Second))
+
+	if proto == "https" {
+		encConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+		})
+		err := encConn.Handshake()
+		if err != nil {
+			panic(err)
+		}
+		c.conn = encConn
+	} else {
+		c.conn = conn
+	}
+	c.writer = bufio.NewWriter(c.conn)
+	c.reader = bufio.NewReader(c.conn)
 }

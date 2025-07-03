@@ -20,10 +20,9 @@ var (
 	threads   int
 	batchSize int
 
-	matchCodes string
+	connectionTimeout int
+	matchCodes        string
 )
-
-const connectionTimeout = 60
 
 var rootCmd = &cobra.Command{
 	Use:   "turbo-intruder",
@@ -66,9 +65,9 @@ var rootCmd = &cobra.Command{
 		}
 
 		fconf := fuzzer.Config{
-			BatchSize:           batchSize,
-			ClientPoolSize:      threads,
-			ConnDeadlineSeconds: connectionTimeout,
+			BatchSize:          batchSize,
+			ClientPoolSize:     threads,
+			DialTimeoutSeconds: connectionTimeout,
 		}
 
 		statusMatcher, err := payload.NewStatusCodeMatcher(matchCodes)
@@ -154,6 +153,7 @@ func init() {
 
 	rootCmd.PersistentFlags().IntVarP(&threads, "threads", "t", 25, "The number of threads used to process requests (default: 25)")
 	rootCmd.PersistentFlags().IntVar(&batchSize, "batch-size", 100, "The size of the batch of pipelined requests (default: 100)")
+	rootCmd.PersistentFlags().IntVar(&connectionTimeout, "timeout", 10, "The connection timeout in seconds (default: 10)")
 
 	rootCmd.PersistentFlags().StringArray("gn", []string{}, "Use a numeric generator for fuzzing (value: `start:end:step:format`, example: `0:100:1:%03d`)")
 	rootCmd.PersistentFlags().StringArray("gw", []string{}, "Use a wordlist generator for fuzzing (value: `filename`)")

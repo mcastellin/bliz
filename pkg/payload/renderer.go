@@ -37,8 +37,23 @@ func (r *RequestRenderer) Render(targetURL *url.URL, method string, fuzz []strin
 	}
 
 	return domain.Wrapper{
-		Host:    targetURL.Host,
+		Scheme:  targetURL.Scheme,
+		Host:    fmt.Sprintf("%s:%s", targetURL.Hostname(), getPort(targetURL)),
 		Fuzz:    fuzz,
 		Request: strings.Join(req, "\r\n"),
 	}
+}
+
+func getPort(u *url.URL) string {
+	portString := u.Port()
+	if len(portString) > 0 {
+		return portString
+	}
+
+	if u.Scheme == "http" {
+		return "80"
+	} else if u.Scheme == "https" {
+		return "443"
+	}
+	return u.Port()
 }

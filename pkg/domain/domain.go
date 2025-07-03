@@ -2,6 +2,7 @@ package domain
 
 // Wrapper is a wrapper struct for fuzz payloads
 type Wrapper struct {
+	Scheme  string
 	Host    string
 	Fuzz    []string
 	Request string
