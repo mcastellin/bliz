@@ -1,6 +1,6 @@
 package main
 
-import "github.com/mcastellin/turbo-intruder/pkg/cmd"
+import "github.com/mcastellin/bliz/pkg/cmd"
 
 func main() {
 	// this is a test program to measure how the pipelined

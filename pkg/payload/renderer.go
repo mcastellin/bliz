@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mcastellin/turbo-intruder/pkg/domain"
+	"github.com/mcastellin/bliz/pkg/domain"
 )
 
 type RequestRenderer struct {

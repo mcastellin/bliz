@@ -1,4 +1,4 @@
-module github.com/mcastellin/turbo-intruder
+module github.com/mcastellin/bliz
 
 go 1.24.4
 

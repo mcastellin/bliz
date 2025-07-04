@@ -10,7 +10,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/mcastellin/turbo-intruder/pkg/domain"
+	"github.com/mcastellin/bliz/pkg/domain"
 )
 
 const defaultConnDeadlineSeconds = 60

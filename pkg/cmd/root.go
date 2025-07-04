@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mcastellin/turbo-intruder/pkg/domain"
-	"github.com/mcastellin/turbo-intruder/pkg/fuzzer"
-	"github.com/mcastellin/turbo-intruder/pkg/payload"
-	termui "github.com/mcastellin/turbo-intruder/pkg/ui"
+	"github.com/mcastellin/bliz/pkg/domain"
+	"github.com/mcastellin/bliz/pkg/fuzzer"
+	"github.com/mcastellin/bliz/pkg/payload"
+	termui "github.com/mcastellin/bliz/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -41,8 +41,8 @@ type reqRenderer interface {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "turbo-intruder",
-	Short: "turbo-intruder is a fast fuzzer.",
+	Use:   "bliz",
+	Short: "bliz is a fast fuzzer.",
 	Long:  `A fast and flexible http fuzzer built with love`,
 	Run: func(cmd *cobra.Command, args []string) {
 

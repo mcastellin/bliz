@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mcastellin/turbo-intruder/pkg/domain"
+	"github.com/mcastellin/bliz/pkg/domain"
 )
 
 type reqRenderer interface {

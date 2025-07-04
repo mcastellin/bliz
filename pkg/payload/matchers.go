@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mcastellin/turbo-intruder/pkg/domain"
+	"github.com/mcastellin/bliz/pkg/domain"
 )
 
 type StatusCodeMatcher struct {

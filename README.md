@@ -1,4 +1,6 @@
-# TurboIntruder
+# Bliz
+
+Blitzing Fast Fuzzer
 
 This is my attempt to replicate the features provided by TurboIntruder in Go.
 
