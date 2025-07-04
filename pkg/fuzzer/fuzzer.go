@@ -2,16 +2,14 @@ package fuzzer
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
-	"github.com/mcastellin/turbo-intruder/pkg/payload"
 )
 
 type reqRenderer interface {
-	Render(url *url.URL, method string, fuzz []string) domain.Wrapper
+	Render(fuzz []string) domain.Wrapper
 }
 type PayloadGenerator interface {
 	Generate() (string, bool)
@@ -44,12 +42,12 @@ type PipelinedFuzzer struct {
 	OUTC       chan domain.FuzzResponse
 }
 
-func NewPipelinedFuzzer(c Config, generators []PayloadGenerator, matchers []ResponseMatcher) (*PipelinedFuzzer, error) {
+func NewPipelinedFuzzer(c Config, renderer reqRenderer, generators []PayloadGenerator, matchers []ResponseMatcher) (*PipelinedFuzzer, error) {
 	if len(generators) == 0 {
 		return nil, fmt.Errorf("could not find valid payload generators for fuzzer.")
 	}
 	return &PipelinedFuzzer{
-		renderer:   payload.NewRequestRenderer(),
+		renderer:   renderer,
 		generators: generators,
 		matchers:   matchers,
 		client:     NewPooledPipelinedClient(c),
@@ -69,7 +67,7 @@ func (ff *PipelinedFuzzer) ReqCount() int64 {
 	return ff.reqCount
 }
 
-func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
+func (ff *PipelinedFuzzer) Fuzz() error {
 	defer close(ff.OUTC)
 
 	ff.client.Start()
@@ -82,7 +80,7 @@ func (ff *PipelinedFuzzer) Fuzz(targetURL *url.URL, method string) error {
 		defer ff.client.Close()
 		for {
 			fuzz, more := getPayload(ff.generators)
-			w := ff.renderer.Render(targetURL, method, fuzz)
+			w := ff.renderer.Render(fuzz)
 			ff.client.INC <- w
 			mu.Lock()
 			generated += 1

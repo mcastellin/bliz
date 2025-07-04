@@ -3,60 +3,151 @@ package payload
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
 )
 
 type RequestRenderer struct {
+	target *url.URL
+	method string
 }
 
-func NewRequestRenderer() *RequestRenderer {
-	return &RequestRenderer{}
+func NewRequestRenderer(target *url.URL, method string) *RequestRenderer {
+	return &RequestRenderer{
+		target: target,
+		method: method,
+	}
 }
 
-func (r *RequestRenderer) Render(targetURL *url.URL, method string, fuzz []string) domain.Wrapper {
+func (r *RequestRenderer) URL() string    { return r.target.String() }
+func (r *RequestRenderer) Method() string { return r.method }
 
-	var renderedPath string
-	if len(fuzz) == 0 {
-		panic("no fuzz could be found to render payload")
-	}
-	if len(fuzz) == 1 {
-		renderedPath = strings.ReplaceAll(targetURL.Path, "FUZZ", fuzz[0])
-	} else {
-		renderedPath = targetURL.Path
-		for _, replacement := range fuzz {
-			renderedPath = strings.Replace(renderedPath, "FUZZ", replacement, 1)
-		}
-	}
-
+func (r *RequestRenderer) Render(fuzz []string) domain.Wrapper {
 	req := []string{
-		fmt.Sprintf("%s %s %s", method, renderedPath, "HTTP/1.2"),
-		fmt.Sprintf("Host: %s", targetURL.Host),
-		// todo: check if theres is any way we can negtiate a keep-alive
+		fmt.Sprintf("%s %s %s", r.method, r.target.Path, "HTTP/1.2"),
+		fmt.Sprintf("Host: %s", r.target.Host),
+		// todo: check if there is any way we can negotiate a keep-alive
 		// from the http request.
 		//fmt.Sprintf("Connection: %s", "keep-alive"),
 		"\r\n",
 	}
+	request := strings.Join(req, "\r\n")
 
 	return domain.Wrapper{
-		Scheme:  targetURL.Scheme,
-		Host:    fmt.Sprintf("%s:%s", targetURL.Hostname(), getPort(targetURL)),
+		Scheme:  r.target.Scheme,
+		Host:    fmt.Sprintf("%s:%s", r.target.Hostname(), getPort(r.target.Port(), r.target.Scheme)),
 		Fuzz:    fuzz,
-		Request: strings.Join(req, "\r\n"),
+		Request: fuzzRequest(request, fuzz),
 	}
 }
 
-func getPort(u *url.URL) string {
-	portString := u.Port()
-	if len(portString) > 0 {
-		return portString
+type RawRequestRenderer struct {
+	scheme                    string
+	host                      string
+	method, path, httpVersion string
+	template                  string
+}
+
+func NewRawRequestRenderer(requestFile, scheme string) (*RawRequestRenderer, error) {
+	template, err := os.ReadFile(requestFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading file from path %s: %w", requestFile, err)
+	}
+	// make sure every new line character is represented with `\r\n`
+	safeTemplate := strings.ReplaceAll(
+		strings.ReplaceAll(string(template), "\r\n", "\n"),
+		"\n", "\r\n",
+	)
+	host := getHostFromRequestTemplate(safeTemplate)
+	if host == nil {
+		return nil, fmt.Errorf("could not extract a valid host from request template")
 	}
 
-	if u.Scheme == "http" {
+	method, path, version := getFieldsFromRequestTemplate(safeTemplate)
+	return &RawRequestRenderer{
+		scheme:      scheme,
+		host:        *host,
+		method:      method,
+		path:        path,
+		httpVersion: version,
+		template:    safeTemplate,
+	}, nil
+}
+
+func (r *RawRequestRenderer) URL() string    { return fmt.Sprintf("%s://%s%s", r.scheme, r.host, r.path) }
+func (r *RawRequestRenderer) Method() string { return r.method }
+
+func (r *RawRequestRenderer) Render(fuzz []string) domain.Wrapper {
+
+	hostAndPort := r.host
+	if strings.Index(hostAndPort, ":") < 0 {
+		hostAndPort = fmt.Sprintf("%s:%s", hostAndPort, getPort("", r.scheme))
+	}
+	return domain.Wrapper{
+		Scheme:  r.scheme,
+		Host:    hostAndPort,
+		Fuzz:    fuzz,
+		Request: fuzzRequest(r.template, fuzz),
+	}
+}
+
+func fuzzRequest(request string, fuzz []string) string {
+	var renderedRequest string
+	if len(fuzz) == 0 {
+		panic("no fuzz could be found to render payload")
+	}
+	if len(fuzz) == 1 {
+		renderedRequest = strings.ReplaceAll(request, "FUZZ", fuzz[0])
+	} else {
+		renderedRequest = request
+		for _, replacement := range fuzz {
+			renderedRequest = strings.Replace(request, "FUZZ", replacement, 1)
+		}
+	}
+	return renderedRequest
+}
+
+func getFieldsFromRequestTemplate(template string) (string, string, string) {
+	var pathLine string
+	idx := strings.Index(template, "\r\n")
+	if idx > 0 {
+		pathLine = template[:idx]
+	} else {
+		pathLine = template
+	}
+	f := strings.Fields(pathLine)
+	if len(f) < 3 {
+		panic("could not read request fields from template")
+	}
+	return f[0], f[1], f[2]
+}
+
+func getHostFromRequestTemplate(template string) *string {
+	idx := strings.Index(template, "Host:")
+	if idx < 0 {
+		return nil
+	}
+	hostLine := template[idx:]
+	idx = strings.Index(hostLine, "\r\n")
+	if idx > 0 {
+		hostLine = hostLine[:idx]
+	}
+
+	host := strings.TrimSpace(strings.ReplaceAll(hostLine, "Host:", ""))
+	return &host
+}
+
+func getPort(port, scheme string) string {
+	if len(port) > 0 {
+		return port
+	}
+
+	if scheme == "http" {
 		return "80"
-	} else if u.Scheme == "https" {
+	} else if scheme == "https" {
 		return "443"
 	}
-	return u.Port()
+	return port
 }

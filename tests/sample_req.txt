@@ -1,0 +1,19 @@
+GET /s/i/productlogos/googleg/v6/24px.svg HTTP/1.1
+Host: fonts.gstatic.com
+Sec-Ch-Ua-Platform: "macOS"
+Accept-Language: en-GB,en;q=0.9
+Sec-Ch-Ua: "Not)A;Brand";v="8", "Chromium";v="138"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
+Sec-Ch-Ua-Mobile: ?0
+Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8
+X-Client-Data: CN2IywE=
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: no-cors
+Sec-Fetch-Dest: image
+Sec-Fetch-Storage-Access: active
+Referer: https://www.google.com/
+Accept-Encoding: gzip, deflate, br
+Priority: u=2, i
+Connection: keep-alive
+
+

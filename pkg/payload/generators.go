@@ -14,7 +14,7 @@ type NumericGenerator struct {
 	nextValue        int64
 }
 
-func NewNumericPayloadGeneratorS(config string) (*NumericGenerator, error) {
+func NewNumericGeneratorS(config string) (*NumericGenerator, error) {
 	bits := strings.Split(config, ":")
 	var err error
 	var start, end, step int64
