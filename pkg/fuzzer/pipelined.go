@@ -2,6 +2,7 @@ package fuzzer
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
@@ -21,17 +22,17 @@ type PooledPipelinedClient struct {
 	INC        chan domain.Wrapper
 	OUTC       chan domain.FuzzResponse
 	doneCh     chan struct{}
-	clientPool []pipelinedClient
+	clientPool []*pipelinedClient
 }
 
 // NewPooledPipelinedClient initialises a new instance of the client pool
 func NewPooledPipelinedClient(c Config) *PooledPipelinedClient {
-	clientPool := make([]pipelinedClient, c.ClientPoolSize)
+	clientPool := make([]*pipelinedClient, c.ClientPoolSize)
 	inCh := make(chan domain.Wrapper, c.BatchSize)
 	outCh := make(chan domain.FuzzResponse, c.BatchSize)
 
 	for i := 0; i < len(clientPool); i++ {
-		clientPool[i] = pipelinedClient{
+		clientPool[i] = &pipelinedClient{
 			dialTimeoutSeconds: c.DialTimeoutSeconds,
 			INC:                inCh,
 			OUTC:               outCh,
@@ -45,6 +46,14 @@ func NewPooledPipelinedClient(c Config) *PooledPipelinedClient {
 		doneCh:     make(chan struct{}),
 		clientPool: clientPool,
 	}
+}
+
+func (pc *PooledPipelinedClient) TotalConnCreateCount() int64 {
+	var count int64
+	for _, c := range pc.clientPool {
+		count += c.ConnCreateCount()
+	}
+	return count
 }
 
 // Start message processing for all clients in the pool
@@ -78,6 +87,20 @@ type pipelinedClient struct {
 	conn               *Connection
 	dialTimeoutSeconds int
 	taintConn          bool
+	connCreationCount  int64
+	connMu             sync.RWMutex
+}
+
+func (c *pipelinedClient) incConnCreationCounter() {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	c.connCreationCount += 1
+}
+
+func (c *pipelinedClient) ConnCreateCount() int64 {
+	c.connMu.RLock()
+	defer c.connMu.RUnlock()
+	return c.connCreationCount
 }
 
 func (c *pipelinedClient) Start() error {
@@ -142,6 +165,7 @@ func (c *pipelinedClient) flushRequests() {
 			if err != nil {
 				return 0, err
 			}
+			c.incConnCreationCounter()
 			c.taintConn = false
 		}
 

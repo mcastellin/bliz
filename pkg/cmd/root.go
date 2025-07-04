@@ -28,6 +28,11 @@ var (
 	requestScheme   string
 )
 
+type fuzzStats interface {
+	ReqCount() int64
+	ConnCreateCount() int64
+}
+
 type reqRenderer interface {
 	Render(fuzz []string) domain.Wrapper
 	URL() string
@@ -129,15 +134,15 @@ var rootCmd = &cobra.Command{
 				matchCodes,
 			)
 
-			updateStatus(ui, start, pipelined.ReqCount())
+			updateStatus(ui, start, pipelined)
 			for {
 				select {
 				case <-ticker.C:
-					updateStatus(ui, start, pipelined.ReqCount())
+					updateStatus(ui, start, pipelined)
 				case response, more := <-pipelined.OUTC:
 					if !more {
 						ui.Printf("\n")
-						updateStatus(ui, start, pipelined.ReqCount())
+						updateStatus(ui, start, pipelined)
 						close(done)
 						return
 					}
@@ -158,14 +163,15 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func updateStatus(ui *termui.TermUI, start time.Time, reqCount int64) {
+func updateStatus(ui *termui.TermUI, start time.Time, stats fuzzStats) {
 	elapsed := time.Since(start)
 	t := time.Time{}.Add(elapsed)
 	ui.UpdateStatus(
-		":: Progress: [%d] :: %d req/sec :: Duration: [%s] :: Errors: 0 ::",
-		reqCount,
-		int(float64(reqCount)/elapsed.Seconds()),
+		":: Progress: [%d] :: %d req/sec :: Duration: [%s] :: Errors: 0 :: Total conns: %d ::",
+		stats.ReqCount(),
+		int(float64(stats.ReqCount())/elapsed.Seconds()),
 		t.Format("15:04:05"),
+		stats.ConnCreateCount(),
 	)
 }
 

@@ -67,6 +67,10 @@ func (ff *PipelinedFuzzer) ReqCount() int64 {
 	return ff.reqCount
 }
 
+func (ff *PipelinedFuzzer) ConnCreateCount() int64 {
+	return ff.client.TotalConnCreateCount()
+}
+
 func (ff *PipelinedFuzzer) Fuzz() error {
 	defer close(ff.OUTC)
 
