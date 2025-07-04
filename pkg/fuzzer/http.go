@@ -85,7 +85,7 @@ func (c *Connection) Read() (*domain.FuzzResponse, bool, error) {
 	}
 
 	ka, ok := resp.Header["Connection"]
-	if !ok || !slices.Contains(ka, "keep-alive") {
+	if resp.Close || (ok && slices.Contains(ka, "close")) {
 		// TCP connection has been closed.
 		// We expect all further reads from the conn to fail, hence
 		// a new connection is needed to process any more requests
