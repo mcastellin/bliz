@@ -3,6 +3,7 @@ package fuzzer
 import (
 	"bufio"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -36,7 +37,7 @@ func NewConnection(scheme, host string, timeout time.Duration) (*Connection, err
 		})
 		err := encConn.Handshake()
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("TLS handshake error: %w", err)
 		}
 		conn = encConn
 	}

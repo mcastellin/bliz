@@ -3,9 +3,8 @@
 This is my attempt to replicate the features provided by TurboIntruder in Go.
 
 **todo**:
-* Filters
-* Support for POST body and body fuzzing
-* Configurable output template
+- Race condition exploitation mode: pre-warm connection pool and fire as many request as possible in the shortest timespan.
+- payload mode options: clusterbomb/pitchfork
 
 ```bash
 curl -XDELETE localhost:8474/proxies/webserver/toxics/latency

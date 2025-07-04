@@ -3,7 +3,6 @@ package payload
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/mcastellin/turbo-intruder/pkg/domain"
@@ -50,14 +49,10 @@ type RawRequestRenderer struct {
 	template                  string
 }
 
-func NewRawRequestRenderer(requestFile, scheme string) (*RawRequestRenderer, error) {
-	template, err := os.ReadFile(requestFile)
-	if err != nil {
-		return nil, fmt.Errorf("error reading file from path %s: %w", requestFile, err)
-	}
+func NewRawRequestRenderer(reqTemplate, scheme string) (*RawRequestRenderer, error) {
 	// make sure every new line character is represented with `\r\n`
 	safeTemplate := strings.ReplaceAll(
-		strings.ReplaceAll(string(template), "\r\n", "\n"),
+		strings.ReplaceAll(reqTemplate, "\r\n", "\n"),
 		"\n", "\r\n",
 	)
 	host := getHostFromRequestTemplate(safeTemplate)

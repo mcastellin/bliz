@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -24,8 +25,8 @@ var (
 	connectionTimeout int
 	matchCodes        string
 
-	requestTemplate string
-	requestScheme   string
+	requestTemplateFile string
+	requestScheme       string
 )
 
 type fuzzStats interface {
@@ -47,8 +48,20 @@ var rootCmd = &cobra.Command{
 
 		var requestRenderer reqRenderer
 		var err error
-		if len(requestTemplate) > 0 {
-			requestRenderer, err = payload.NewRawRequestRenderer(requestTemplate, requestScheme)
+		if len(requestTemplateFile) > 0 {
+			var requestTemplate []byte
+			if requestTemplateFile == "-" {
+				requestTemplate, err = io.ReadAll(os.Stdin)
+				if err != nil {
+					panic(fmt.Errorf("error reading request template from stdin: %w", err))
+				}
+			} else {
+				requestTemplate, err = os.ReadFile(requestTemplateFile)
+				if err != nil {
+					panic(fmt.Errorf("error reading file from path %s: %w", requestTemplateFile, err))
+				}
+			}
+			requestRenderer, err = payload.NewRawRequestRenderer(string(requestTemplate), requestScheme)
 			if err != nil {
 				panic(err)
 			}
@@ -186,11 +199,11 @@ func init() {
 	rootCmd.PersistentFlags().StringArrayP("gw", "w", []string{}, "Use a wordlist generator for fuzzing (value: `filename`)")
 	rootCmd.PersistentFlags().StringArray("gn", []string{}, "Use a numeric generator for fuzzing (value: `start:end:step:format`, example: `0:100:1:%03d`)")
 
-	rootCmd.PersistentFlags().StringVar(&requestTemplate, "request", "", "Use request template from file. (value: `filename`)")
-	rootCmd.PersistentFlags().StringVar(&requestScheme, "request-scheme", "https", "Specify the protocol scheme to use with a request template (value `sheme`, default: `https`)")
+	rootCmd.PersistentFlags().StringVar(&requestTemplateFile, "request", "", "Use request template from file. Use '-' to read template from STDIN (value: `filename`)")
+	rootCmd.PersistentFlags().StringVar(&requestScheme, "request-scheme", "https", "Specify the protocol scheme to use with a request template (value `scheme`, default: `https`)")
 
 	rootCmd.PersistentFlags().StringVar(&matchCodes, "mc", "200,204,301,302,307,401,403",
-		"Match HTTP status codes, or `all` for everything. (value: `code`, default: 200,204,301,302,307,401,403)")
+		"Match HTTP status codes, or 'all' for everything. (value: `httpStatus`, default: 200,204,301,302,307,401,403)")
 
 }
 
